@@ -33,7 +33,7 @@ def parse_json(text: str) -> dict:
 async def call_gemini(system: str, user: str, max_tokens: int = 1000) -> dict:
     client = get_client()
     response = await client.chat.completions.create(
-        model="gemini-2.0-flash",
+        model="gemini-1.5-flash",
         max_tokens=max_tokens,
         messages=[
             {"role": "system", "content": system},
@@ -46,7 +46,7 @@ async def call_gemini(system: str, user: str, max_tokens: int = 1000) -> dict:
 async def call_gemini_text(system: str, user: str, max_tokens: int = 500) -> str:
     client = get_client()
     response = await client.chat.completions.create(
-        model="gemini-2.0-flash",
+        model="gemini-1.5-flash",
         max_tokens=max_tokens,
         messages=[
             {"role": "system", "content": system},
