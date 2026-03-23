@@ -68,8 +68,8 @@ async def stream_projects(request: ProjectRequest):
     - error    → something went wrong
     - done     → stream complete
     """
-    if not os.getenv("ANTHROPIC_API_KEY"):
-        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not configured")
+    if not os.getenv("GEMINI_API_KEY"):
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured")
 
     async def event_stream():
         try:
@@ -137,8 +137,8 @@ async def get_projects(request: ProjectRequest):
     Non-streaming version — waits for the full pipeline then returns results.
     Use this as fallback if SSE isn't supported.
     """
-    if not os.getenv("ANTHROPIC_API_KEY"):
-        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not configured")
+    if not os.getenv("GEMINI_API_KEY"):
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured")
 
     try:
         initial_state = {
@@ -170,35 +170,23 @@ async def get_projects(request: ProjectRequest):
 # ── Video script generation — called per tutorial step ───────────────────────
 @app.post("/api/video/script")
 async def generate_video_script(request: VideoScriptRequest):
-    """
-    Generates a video script for a single tutorial step.
-    Called by the frontend Video Agent per step when the user enters the tutorial.
-    """
-    from langchain_anthropic import ChatAnthropic
-    from langchain_core.messages import SystemMessage, HumanMessage
-    from agents import parse_json
+    from agents import call_gemini, parse_json
 
-    if not os.getenv("ANTHROPIC_API_KEY"):
-        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not configured")
+    if not os.getenv("GEMINI_API_KEY"):
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured")
 
     try:
-        model = ChatAnthropic(model="claude-sonnet-4-20250514", max_tokens=800)
-
-        system = """You are the Video Agent in Flex AI. Write a tight 60-second tutorial video script that is hyper-specific to the exact project, stack and step.
-
-Respond ONLY with valid JSON:
+        system = """You are the Video Agent in Flex AI. Write a 60-second tutorial video script specific to the project and step.
+Respond ONLY with valid JSON, no markdown:
 {
   "title": "short video title max 6 words",
-  "narration": "spoken script 80-100 words — reference the exact project name, exact tools, exact commands. Friendly and encouraging.",
-  "captions": [
-    {"t": 0, "text": "caption text"},
-    {"t": 6, "text": "next caption"}
-  ],
+  "narration": "spoken script 80-100 words, reference exact project name and tools, friendly and encouraging",
+  "captions": [{"t": 0, "text": "caption"}, {"t": 6, "text": "next"}],
   "code_lines": ["line1", "line2", "line3", "line4", "line5"]
 }
-Include 8-10 caption objects. code_lines: key real code lines for this step (max 8)."""
+Include 8-10 caption objects. code_lines: key real code lines max 8."""
 
-        human = f"""User problem: {request.problem_scope}
+        user = f"""Problem: {request.problem_scope}
 Project: {request.project_title} ({request.project_type})
 Stack: {', '.join(request.stack)}
 Difficulty: {request.difficulty}
@@ -208,9 +196,7 @@ Description: {request.step_desc}
 
 Write the 60-second video script."""
 
-        response = model.invoke([SystemMessage(content=system), HumanMessage(content=human)])
-        result = parse_json(response.content)
-
+        result = await call_gemini(system, user, 800)
         return result
 
     except Exception as e:
@@ -220,30 +206,20 @@ Write the 60-second video script."""
 # ── Tutorial step generation — called when user picks a project ───────────────
 @app.post("/api/tutorial/steps")
 async def generate_tutorial_steps(request: dict):
-    """
-    Generates the full step-by-step tutorial for a chosen project.
-    Receives the complete project object (from /api/projects) and
-    returns 6-8 detailed tutorial steps.
-    """
-    from langchain_anthropic import ChatAnthropic
-    from langchain_core.messages import SystemMessage, HumanMessage
-    from agents import parse_json
+    from agents import call_gemini
 
-    if not os.getenv("ANTHROPIC_API_KEY"):
-        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not configured")
+    if not os.getenv("GEMINI_API_KEY"):
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured")
 
     try:
-        model = ChatAnthropic(model="claude-sonnet-4-20250514", max_tokens=5000)
         project = request.get("project", {})
         problem = request.get("problem", "")
-
-        starter_code = project.get("starter_code", {})
-        tools = project.get("tools", [])
-        tools_str = ", ".join([t.get("name", "") + " (" + t.get("url", "") + ")" for t in tools])
+        starter_code = project.get("starter_code") or {}
+        tools = project.get("tools") or []
+        tools_str = ", ".join([t.get("name","") + " (" + t.get("url","") + ")" for t in tools])
 
         system = """You are the Tutorial Agent in Flex AI generating detailed step-by-step instructions.
-
-Respond ONLY with valid JSON:
+Respond ONLY with valid JSON, no markdown:
 {
   "steps": [
     {
@@ -256,43 +232,30 @@ Respond ONLY with valid JSON:
         {"t": "prose", "v": "HTML with <strong> tags ok"},
         {"t": "callout", "v": "info | warn | success", "text": "..."},
         {"t": "code", "lang": "python | bash | javascript", "editable": true, "code": "REAL code", "expected": "expected output"},
-        {"t": "wire", "label": "component wiring description"}
+        {"t": "wire", "label": "component wiring"}
       ],
-      "errors": ["specific real error 1", "specific real error 2"],
-      "verify": "exactly what the user should see to confirm this step worked"
+      "errors": ["real error 1", "real error 2"],
+      "verify": "what user should see to confirm step worked"
     }
   ]
 }
+Rules: 6-8 steps, real runnable code only, wire type only on hardware steps."""
 
-Rules:
-- 6-8 steps
-- Real, specific, runnable code — not pseudocode
-- Wire type only on hardware steps
-- errors must be real errors someone would actually hit
-- Use the starter code snippet provided in the relevant step"""
+        user = f"""Problem: {problem}
+Project: {project.get('title','')} ({project.get('type','')})
+Stack: {', '.join(project.get('stack',[]))}
+Difficulty: {project.get('difficulty','')}
+Description: {project.get('description','')}
 
-        human = f"""User problem: {problem}
-Project: {project.get('title', '')} ({project.get('type', '')})
-Stack: {', '.join(project.get('stack', []))}
-Difficulty: {project.get('difficulty', '')}
-Description: {project.get('description', '')}
-Prerequisites: {', '.join(project.get('prerequisites', []))}
-Gotchas: {', '.join(project.get('gotchas', []))}
+Starter code ({starter_code.get('filename','main.py')}):
+Install: {starter_code.get('install','')}
+{starter_code.get('code','')}
 
-Starter code:
-Filename: {starter_code.get('filename', 'main.py')}
-Language: {starter_code.get('lang', 'python')}
-Install: {starter_code.get('install', '')}
-Code:
-{starter_code.get('code', '')}
+Tools: {tools_str}
 
-Key tools and docs: {tools_str}
+Write the complete tutorial with real code."""
 
-Write the complete tutorial. Real code only."""
-
-        response = model.invoke([SystemMessage(content=system), HumanMessage(content=human)])
-        result = parse_json(response.content)
-
+        result = await call_gemini(system, user, 4000)
         return result
 
     except Exception as e:
