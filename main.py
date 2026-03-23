@@ -110,8 +110,10 @@ async def stream_projects(request: ProjectRequest):
         event_stream(),
         media_type="text/event-stream",
         headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
+    "Cache-Control": "no-cache, no-transform",
+    "X-Accel-Buffering": "no",
+    "Connection": "keep-alive",
+    "Access-Control-Allow-Origin": "*",
         }
     )
 
@@ -155,6 +157,8 @@ async def get_projects(request: ProjectRequest):
 
 # ── Video script generation — called per tutorial step ───────────────────────
 @app.post("/api/video/script")
+yield f"data: {json.dumps({'type': 'log', 'message': 'Connected — 7 agents starting…'})}\n\n"
+await asyncio.sleep(0.1)
 async def generate_video_script(request: VideoScriptRequest):
     """
     Generates a video script for a single tutorial step.
