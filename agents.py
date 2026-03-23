@@ -1,21 +1,18 @@
 """
-Flex AI — Agent definitions (Gemini version)
+Flex AI — Agent definitions (Gemini via OpenAI-compatible API)
+Much simpler and more reliable than google-generativeai SDK.
 """
 
 import json
 import re
 import os
-import google.generativeai as genai
+from openai import AsyncOpenAI
 
 
-def get_model(max_tokens=1500):
-    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-    return genai.GenerativeModel(
-        model_name="gemini-1.5-flash-latest",
-        generation_config=genai.types.GenerationConfig(
-            temperature=0.7,
-            max_output_tokens=max_tokens,
-        )
+def get_client():
+    return AsyncOpenAI(
+        api_key=os.getenv("GEMINI_API_KEY"),
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
     )
 
 
@@ -34,10 +31,29 @@ def parse_json(text: str) -> dict:
 
 
 async def call_gemini(system: str, user: str, max_tokens: int = 1000) -> dict:
-    model = get_model(max_tokens)
-    prompt = f"{system}\n\nUser request:\n{user}"
-    response = model.generate_content(prompt)
-    return parse_json(response.text)
+    client = get_client()
+    response = await client.chat.completions.create(
+        model="gemini-2.0-flash",
+        max_tokens=max_tokens,
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user}
+        ]
+    )
+    return parse_json(response.choices[0].message.content)
+
+
+async def call_gemini_text(system: str, user: str, max_tokens: int = 500) -> str:
+    client = get_client()
+    response = await client.chat.completions.create(
+        model="gemini-2.0-flash",
+        max_tokens=max_tokens,
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user}
+        ]
+    )
+    return response.choices[0].message.content or ""
 
 
 async def planner_agent(state: dict) -> dict:
@@ -53,7 +69,7 @@ async def planner_agent(state: dict) -> dict:
 }"""
     user = f"Problem: {state['problem']}\nBudget: ${state['budget']}\n\nAnalyse this and produce a structured brief."
     result = await call_gemini(system, user, 600)
-    return {**state, "planner": result, "log": state.get("log", []) + ["🧠 Planner: brief defined — " + result.get("scope", "scope undefined")]}
+    return {**state, "planner": result, "log": state.get("log", []) + ["🧠 Planner: brief defined — " + result.get("scope", "done")]}
 
 
 async def stack_scout_agent(state: dict) -> dict:
@@ -107,7 +123,7 @@ async def tutorial_agent(state: dict) -> dict:
     planner = state.get("planner", {})
     stack_scout = state.get("stack_scout", {})
     solutions_detail = "\n".join([f"{i+1}. {s.get('title','')} — Stack: {', '.join(s.get('stack',[]))} — Difficulty: {s.get('difficulty','')}" for i,s in enumerate(stack_scout.get("solutions",[]))])
-    system = """You are the Tutorial Agent in Flex AI. Write for people with NO technical background. Respond ONLY with valid JSON, no markdown:
+    system = """You are the Tutorial Agent in Flex AI. Respond ONLY with valid JSON, no markdown:
 {
   "solutions": [
     {
