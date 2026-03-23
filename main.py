@@ -164,7 +164,10 @@ async def get_projects(request: ProjectRequest):
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        tb = traceback.format_exc()
+        print(f"ERROR /api/projects: {tb}")
+        raise HTTPException(status_code=500, detail=f"{str(e)} | Traceback: {tb[-800:]}")
 
 
 # ── Video script generation — called per tutorial step ───────────────────────
