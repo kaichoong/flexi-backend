@@ -265,7 +265,7 @@ Write the complete tutorial with real code."""
 # ── Generic chat endpoint — AI Tutor, Simplify, Diagnose ─────────────────────
 @app.post("/api/chat")
 async def chat(request: dict):
-    from agents import call_gemini
+    from agents import call_gemini_text
 
     if not os.getenv("GEMINI_API_KEY"):
         raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured")
@@ -274,19 +274,8 @@ async def chat(request: dict):
         system = request.get("system", "You are a helpful AI assistant. Be concise.")
         user = request.get("user", "")
         max_tokens = request.get("max_tokens", 300)
-
-        import google.generativeai as genai
-        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-        model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash-latest",
-            generation_config=genai.types.GenerationConfig(
-                temperature=0.7,
-                max_output_tokens=max_tokens,
-            )
-        )
-        prompt = f"{system}\n\nUser: {user}"
-        response = model.generate_content(prompt)
-        return {"text": response.text}
+        text = await call_gemini_text(system, user, max_tokens)
+        return {"text": text}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
