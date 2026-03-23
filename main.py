@@ -87,10 +87,22 @@ async def stream_projects(request: ProjectRequest):
                 "error": None,
             }
 
+            # Send immediate confirmation so frontend knows connection is alive
+            yield f"data: {json.dumps({'type': 'log', 'message': 'Connected — 7 agents starting…'})}\n\n"
+            await asyncio.sleep(0.1)
+
+            last_ping = asyncio.get_event_loop().time()
+
             # Stream progress as each agent node completes
             async for step in flex_graph.astream(initial_state):
                 node_name = list(step.keys())[0] if step else None
                 node_state = step.get(node_name, {}) if node_name else {}
+
+                # Send heartbeat ping every 10s to keep connection alive
+                now = asyncio.get_event_loop().time()
+                if now - last_ping > 10:
+                    yield f"data: {json.dumps({'type': 'ping'})}\n\n"
+                    last_ping = now
 
                 # Emit any new log entries
                 for entry in node_state.get("log", []):
@@ -110,10 +122,10 @@ async def stream_projects(request: ProjectRequest):
         event_stream(),
         media_type="text/event-stream",
         headers={
-    "Cache-Control": "no-cache, no-transform",
-    "X-Accel-Buffering": "no",
-    "Connection": "keep-alive",
-    "Access-Control-Allow-Origin": "*",
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+            "Access-Control-Allow-Origin": "*",
         }
     )
 
@@ -157,8 +169,6 @@ async def get_projects(request: ProjectRequest):
 
 # ── Video script generation — called per tutorial step ───────────────────────
 @app.post("/api/video/script")
-yield f"data: {json.dumps({'type': 'log', 'message': 'Connected - 7 agents starting...'})}\n\n"
-await asyncio.sleep(0.1)
 async def generate_video_script(request: VideoScriptRequest):
     """
     Generates a video script for a single tutorial step.
