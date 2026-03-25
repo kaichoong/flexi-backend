@@ -68,8 +68,8 @@ async def stream_projects(request: ProjectRequest):
     - error    → something went wrong
     - done     → stream complete
     """
-    if not os.getenv("GEMINI_API_KEY"):
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured")
+    if not os.getenv("GROQ_API_KEY"):
+        raise HTTPException(status_code=500, detail="GROQ_API_KEY not configured")
 
     async def event_stream():
         try:
@@ -137,8 +137,8 @@ async def get_projects(request: ProjectRequest):
     Non-streaming version — waits for the full pipeline then returns results.
     Use this as fallback if SSE isn't supported.
     """
-    if not os.getenv("GEMINI_API_KEY"):
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured")
+    if not os.getenv("GROQ_API_KEY"):
+        raise HTTPException(status_code=500, detail="GROQ_API_KEY not configured")
 
     try:
         initial_state = {
@@ -175,8 +175,8 @@ async def get_projects(request: ProjectRequest):
 async def generate_video_script(request: VideoScriptRequest):
     from agents import call_gemini, parse_json
 
-    if not os.getenv("GEMINI_API_KEY"):
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured")
+    if not os.getenv("GROQ_API_KEY"):
+        raise HTTPException(status_code=500, detail="GROQ_API_KEY not configured")
 
     try:
         system = """You are the Video Agent in Flex AI. Write a 60-second tutorial video script specific to the project and step.
@@ -211,8 +211,8 @@ Write the 60-second video script."""
 async def generate_tutorial_steps(request: dict):
     from agents import call_gemini
 
-    if not os.getenv("GEMINI_API_KEY"):
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured")
+    if not os.getenv("GROQ_API_KEY"):
+        raise HTTPException(status_code=500, detail="GROQ_API_KEY not configured")
 
     try:
         project = request.get("project", {})
@@ -270,8 +270,8 @@ Write the complete tutorial with real code."""
 async def chat(request: dict):
     from agents import call_gemini_text
 
-    if not os.getenv("GEMINI_API_KEY"):
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured")
+    if not os.getenv("GROQ_API_KEY"):
+        raise HTTPException(status_code=500, detail="GROQ_API_KEY not configured")
 
     try:
         system = request.get("system", "You are a helpful AI assistant. Be concise.")
