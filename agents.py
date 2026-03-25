@@ -1,6 +1,6 @@
 """
-Flex AI — Agent definitions (Gemini via OpenAI-compatible API)
-Much simpler and more reliable than google-generativeai SDK.
+Flex AI — Agent definitions (Groq via OpenAI-compatible API)
+Using LLaMA 3.3 70B on Groq for fast, free inference.
 """
 
 import json
@@ -11,8 +11,8 @@ from openai import AsyncOpenAI
 
 def get_client():
     return AsyncOpenAI(
-        api_key=os.getenv("GEMINI_API_KEY"),
-        base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+        api_key=os.getenv("GROQ_API_KEY"),
+        base_url="https://api.groq.com/openai/v1"
     )
 
 
@@ -33,7 +33,7 @@ def parse_json(text: str) -> dict:
 async def call_gemini(system: str, user: str, max_tokens: int = 1000) -> dict:
     client = get_client()
     response = await client.chat.completions.create(
-        model="gemini-1.5-flash",
+        model="llama-3.3-70b-versatile",
         max_tokens=max_tokens,
         messages=[
             {"role": "system", "content": system},
@@ -46,7 +46,7 @@ async def call_gemini(system: str, user: str, max_tokens: int = 1000) -> dict:
 async def call_gemini_text(system: str, user: str, max_tokens: int = 500) -> str:
     client = get_client()
     response = await client.chat.completions.create(
-        model="gemini-1.5-flash",
+        model="llama-3.3-70b-versatile",
         max_tokens=max_tokens,
         messages=[
             {"role": "system", "content": system},
