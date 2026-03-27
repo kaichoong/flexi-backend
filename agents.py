@@ -31,29 +31,39 @@ def parse_json(text: str) -> dict:
 
 
 async def call_gemini(system: str, user: str, max_tokens: int = 1000) -> dict:
-    client = get_client()
-    response = await client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        max_tokens=max_tokens,
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": user}
-        ]
-    )
-    return parse_json(response.choices[0].message.content)
+    try:
+        client = get_client()
+        response = await client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            max_tokens=max_tokens,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user}
+            ]
+        )
+        raw = response.choices[0].message.content
+        print(f"[LLM RAW] {raw[:200]}...")
+        return parse_json(raw)
+    except Exception as e:
+        print(f"[LLM ERROR] {str(e)}")
+        return {}
 
 
 async def call_gemini_text(system: str, user: str, max_tokens: int = 500) -> str:
-    client = get_client()
-    response = await client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        max_tokens=max_tokens,
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": user}
-        ]
-    )
-    return response.choices[0].message.content or ""
+    try:
+        client = get_client()
+        response = await client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            max_tokens=max_tokens,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user}
+            ]
+        )
+        return response.choices[0].message.content or ""
+    except Exception as e:
+        print(f"[LLM ERROR] {str(e)}")
+        return f"Error: {str(e)}"
 
 
 async def planner_agent(state: dict) -> dict:
@@ -69,11 +79,13 @@ async def planner_agent(state: dict) -> dict:
 }"""
     user = f"Problem: {state['problem']}\nBudget: ${state['budget']}\n\nAnalyse this and produce a structured brief."
     result = await call_gemini(system, user, 600)
+    if not result:
+        return {**state, "planner": {}, "log": state.get("log", []) + ["🧠 Planner: ⚠️ failed to get response"], "error": "Planner returned empty"}
     return {**state, "planner": result, "log": state.get("log", []) + ["🧠 Planner: brief defined — " + result.get("scope", "done")]}
 
 
 async def stack_scout_agent(state: dict) -> dict:
-    planner = state.get("planner", {})
+    planner = state.get("planner") or {}
     system = """You are the Stack Scout agent in Flex AI. Respond ONLY with valid JSON, no markdown:
 {
   "solutions": [
@@ -92,12 +104,14 @@ async def stack_scout_agent(state: dict) -> dict:
 Exactly 3 solutions with product-style titles."""
     user = f"Scope: {planner.get('scope','')}\nType: {planner.get('problem_type','')}\nApproaches: {json.dumps(planner.get('approaches',[]))}\nBudget: ${state['budget']}\n\nIdentify best tech stack for 3 solutions."
     result = await call_gemini(system, user, 800)
+    if not result:
+        return {**state, "stack_scout": {}, "log": state.get("log",[]) + ["🔍 Stack Scout: ⚠️ failed to get response"]}
     titles = [s.get("title","") for s in result.get("solutions",[])]
     return {**state, "stack_scout": result, "log": state.get("log",[]) + [f"🔍 Stack Scout: {', '.join(titles)} — stacks identified"]}
 
 
 async def budget_bot_agent(state: dict) -> dict:
-    stack_scout = state.get("stack_scout", {})
+    stack_scout = state.get("stack_scout") or {}
     summary = "\n".join([f"{i+1}. {s.get('title','')} ({s.get('type','')}): {', '.join(s.get('stack',[]))}" for i,s in enumerate(stack_scout.get("solutions",[]))])
     system = """You are the Budget Bot agent in Flex AI. Respond ONLY with valid JSON, no markdown:
 {
@@ -115,13 +129,15 @@ async def budget_bot_agent(state: dict) -> dict:
 }"""
     user = f"Budget: ${state['budget']}\n\nStacks:\n{summary}\n\nCalculate realistic costs. Prefer free options."
     result = await call_gemini(system, user, 700)
+    if not result:
+        return {**state, "budget_bot": {}, "log": state.get("log",[]) + ["💰 Budget Bot: ⚠️ failed to get response"]}
     cost_summary = " | ".join([f"{s.get('title','')}: {s.get('estimated_cost','?')}" for s in result.get("solutions",[])])
     return {**state, "budget_bot": result, "log": state.get("log",[]) + [f"💰 Budget Bot: {cost_summary}"]}
 
 
 async def tutorial_agent(state: dict) -> dict:
-    planner = state.get("planner", {})
-    stack_scout = state.get("stack_scout", {})
+    planner = state.get("planner") or {}
+    stack_scout = state.get("stack_scout") or {}
     solutions_detail = "\n".join([f"{i+1}. {s.get('title','')} — Stack: {', '.join(s.get('stack',[]))} — Difficulty: {s.get('difficulty','')}" for i,s in enumerate(stack_scout.get("solutions",[]))])
     system = """You are the Tutorial Agent in Flex AI. Respond ONLY with valid JSON, no markdown:
 {
@@ -138,12 +154,14 @@ async def tutorial_agent(state: dict) -> dict:
 }"""
     user = f"Problem: {planner.get('scope', state['problem'])}\nBudget: ${state['budget']}\n\nSolutions:\n{solutions_detail}\n\nWrite descriptions and 2-3 phases per solution."
     result = await call_gemini(system, user, 1000)
+    if not result:
+        return {**state, "tutorial": {}, "log": state.get("log",[]) + ["📋 Tutorial Agent: ⚠️ failed to get response"]}
     return {**state, "tutorial": result, "log": state.get("log",[]) + ["📋 Tutorial Agent: build phases written"]}
 
 
 async def code_agent(state: dict) -> dict:
-    planner = state.get("planner", {})
-    stack_scout = state.get("stack_scout", {})
+    planner = state.get("planner") or {}
+    stack_scout = state.get("stack_scout") or {}
     solutions_detail = "\n".join([f"{i+1}. {s.get('title','')} — Stack: {', '.join(s.get('stack',[]))}" for i,s in enumerate(stack_scout.get("solutions",[]))])
     system = """You are the Code Agent in Flex AI. Write REAL runnable code only. Respond ONLY with valid JSON, no markdown:
 {
@@ -160,11 +178,13 @@ async def code_agent(state: dict) -> dict:
 }"""
     user = f"Problem: {planner.get('scope', state['problem'])}\n\nSolutions:\n{solutions_detail}\n\nWrite a real starter snippet for each."
     result = await call_gemini(system, user, 900)
+    if not result:
+        return {**state, "code_agent": {}, "log": state.get("log",[]) + ["🤖 Code Agent: ⚠️ failed to get response"]}
     return {**state, "code_agent": result, "log": state.get("log",[]) + ["🤖 Code Agent: starter snippets generated"]}
 
 
 async def tools_sourcer_agent(state: dict) -> dict:
-    stack_scout = state.get("stack_scout", {})
+    stack_scout = state.get("stack_scout") or {}
     summary = "\n".join([f"{i+1}. {s.get('title','')} — Stack: {', '.join(s.get('stack',[]))}" for i,s in enumerate(stack_scout.get("solutions",[]))])
     system = """You are the Tools Sourcer agent in Flex AI. Real URLs only. Respond ONLY with valid JSON, no markdown:
 {
@@ -178,11 +198,13 @@ async def tools_sourcer_agent(state: dict) -> dict:
 3-4 tools per solution."""
     user = f"Solutions:\n{summary}\n\nFind real resources for each."
     result = await call_gemini(system, user, 700)
+    if not result:
+        return {**state, "tools_sourcer": {}, "log": state.get("log",[]) + ["📦 Tools Sourcer: ⚠️ failed to get response"]}
     return {**state, "tools_sourcer": result, "log": state.get("log",[]) + ["📦 Tools Sourcer: resources found"]}
 
 
 async def video_agent(state: dict) -> dict:
-    stack_scout = state.get("stack_scout", {})
-    planner = state.get("planner", {})
+    stack_scout = state.get("stack_scout") or {}
+    planner = state.get("planner") or {}
     queued = [{"title": s.get("title",""), "type": s.get("type",""), "stack": s.get("stack",[]), "problem_scope": planner.get("scope", state["problem"]), "status": "queued"} for s in stack_scout.get("solutions",[])]
     return {**state, "video_agent": {"queued": queued, "status": "ready"}, "log": state.get("log",[]) + [f"🎬 Video Agent: {len(queued)} video queues ready"]}
